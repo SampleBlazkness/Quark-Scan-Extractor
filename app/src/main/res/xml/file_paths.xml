@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- 预览临时文件放在应用自己的外部目录：/storage/emulated/0/Android/data/<pkg>/files/preview -->
+    <external-files-path
+        name="preview"
+        path="preview/" />
+    <cache-path
+        name="cache"
+        path="." />
+</paths>

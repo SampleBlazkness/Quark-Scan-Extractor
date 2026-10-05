@@ -1,0 +1,7 @@
+# Shizuku 会用反射按类名实例化用户服务，类名和构造函数不能被混淆。
+-keep class com.blazkness.quarkscanextractor.shizuku.ShizukuUserService { *; }
+-keep class com.blazkness.quarkscanextractor.IUserService { *; }
+-keep class com.blazkness.quarkscanextractor.IUserService$Stub { *; }
+-keepclassmembers class com.blazkness.quarkscanextractor.shizuku.ShizukuUserService {
+    public <init>(...);
+}

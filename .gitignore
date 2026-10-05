@@ -1,0 +1,29 @@
+*.iml
+.gradle
+/local.properties
+/.idea/caches
+/.idea/libraries
+/.idea/modules.xml
+/.idea/workspace.xml
+/.idea/navEditor.xml
+/.idea/assetWizardSettings.xml
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+
+# 签名密钥：绝不入库（泄露 = 别人能发布看起来是你发的更新）
+keystore.properties
+*.jks
+*.keystore
+keystore/
+
+# IDE 生成 / 机器相关（.idea 里其余内容按 Android Studio 默认模板提交）
+.idea/.name
+.idea/AndroidProjectSystem.xml
+.idea/deploymentTargetSelector.xml
+.idea/shelf/
+# Kotlin 构建缓存（AGP 9 / Kotlin 2.x）
+.kotlin/
