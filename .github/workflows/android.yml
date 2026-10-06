@@ -1,0 +1,88 @@
+name: android
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  apk:
+    name: build APKs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # Gradle 的 daemon JVM 条件是 25（见 gradle/gradle-daemon-jvm.properties），
+      # 本地也是 Zulu 25，两边保持一致。
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      # compileSdk 37 + 本地在用的 build-tools 36.0.0
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: 'platforms;android-37 build-tools;36.0.0'
+
+      - uses: gradle/actions/setup-gradle@v6
+
+      # 用仓库里这一份 debug 密钥，而不是让 AGP 在 runner 上现场随机生成一把：
+      # 随机生成的话别名密码一样，签名却不同，CI 出来的包和本地 AS 构建的无法互相覆盖安装。
+      - name: Use the repo debug keystore
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.android"
+          cp keystore/debug.keystore "$HOME/.android/debug.keystore"
+
+      # release 不带签名：仓库里没有 keystore.properties，hasReleaseSigning 为 false，
+      # AGP 就跳过签名，产出 app-release-unsigned.apk，由本地用 keystore/qse-release.jks 签。
+      - name: Build debug and release
+        run: ./gradlew assembleDebug assembleRelease
+
+      - name: Check the debug APK is signed with the repo debug key
+        run: |
+          set -euo pipefail
+          apk=app/build/outputs/apk/debug/app-debug.apk
+          want=1c98acc1d156621f9a87fa1001e75b589cd719f74e276c30256272034f45ebab
+          got=$("$ANDROID_HOME"/build-tools/36.0.0/apksigner verify --print-certs "$apk" \
+                | sed -n 's/.*SHA-256 digest: //p' | head -1 | tr -d '\r')
+          echo "debug APK   SHA-256: $got"
+          echo "repo debug  key    : $want"
+          if [ "$got" != "$want" ]; then
+            echo "::error::debug APK is not signed with the repo debug key"
+            exit 1
+          fi
+          echo "签名与本机 Android Studio 构建一致，可直接覆盖安装"
+
+      - name: Report the release APK
+        run: |
+          set -euo pipefail
+          apk=$(ls app/build/outputs/apk/release/*.apk | head -1)
+          echo "release APK: $apk"
+          if "$ANDROID_HOME"/build-tools/36.0.0/apksigner verify "$apk" >/dev/null 2>&1; then
+            echo "::warning::release APK is signed - a keystore.properties was present on the runner"
+          else
+            echo "release APK is unsigned, as expected - sign it locally with keystore/qse-release.jks"
+          fi
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: QuarkScanExtractor-debug
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+
+      - name: Upload release APK (unsigned)
+        uses: actions/upload-artifact@v7
+        with:
+          name: QuarkScanExtractor-release-unsigned
+          path: app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
