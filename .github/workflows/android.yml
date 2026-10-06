@@ -46,7 +46,6 @@ jobs:
           fi
           echo "accepted licenses:"
           ls "$sdk/licenses" 2>/dev/null || echo "  (licenses 目录不存在)"
-          echo "ANDROID_HOME=$sdk" >> "$GITHUB_ENV"
 
       - uses: gradle/actions/setup-gradle@v6
 
@@ -57,19 +56,64 @@ jobs:
           set -euo pipefail
           mkdir -p "$HOME/.android"
           cp keystore/debug.keystore "$HOME/.android/debug.keystore"
+          keytool -list -keystore "$HOME/.android/debug.keystore" -storepass android \
+            | sed -n '1,8p'
 
       # release 不带签名：仓库里没有 keystore.properties，hasReleaseSigning 为 false，
       # AGP 就跳过签名，产出 app-release-unsigned.apk，由本地用 keystore/qse-release.jks 签。
       - name: Build debug and release
         run: ./gradlew assembleDebug assembleRelease
 
+      # 诊断：AGP 到底把 debug 签名解析成了哪个密钥
+      - name: Signing diagnostics
+        if: always()
+        run: |
+          set -euo pipefail
+          echo "HOME=$HOME"
+          echo "--- android 相关环境变量 ---"
+          env | grep -i android || true
+          echo "--- \$HOME/.android ---"
+          ls -la "$HOME/.android" || true
+          echo "--- gradle signingReport ---"
+          ./gradlew :app:signingReport 2>&1 | tail -60 || true
+
+      - name: Report the release APK
+        if: always()
+        run: |
+          set -euo pipefail
+          apk=$(ls app/build/outputs/apk/release/*.apk 2>/dev/null | head -1) || true
+          echo "release APK: ${apk:-<none>}"
+          apksigner=$(ls "$ANDROID_HOME"/build-tools/*/apksigner 2>/dev/null | sort -V | tail -1)
+          echo "apksigner: ${apksigner:-<none>}"
+          if [ -n "$apk" ] && [ -n "$apksigner" ] && "$apksigner" verify "$apk" >/dev/null 2>&1; then
+            echo "::warning::release APK is signed - a keystore.properties was present on the runner"
+          else
+            echo "release APK is unsigned, as expected - sign it locally with keystore/qse-release.jks"
+          fi
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: QuarkScanExtractor-debug
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: warn
+
+      - name: Upload release APK (unsigned)
+        uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: QuarkScanExtractor-release-unsigned
+          path: app/build/outputs/apk/release/*.apk
+          if-no-files-found: warn
+
+      # 放在最后：校验不过就是构建失败，但产物已经先上传了，便于排查
       - name: Check the debug APK is signed with the repo debug key
         run: |
           set -euo pipefail
           apk=app/build/outputs/apk/debug/app-debug.apk
           apksigner=$(ls "$ANDROID_HOME"/build-tools/*/apksigner 2>/dev/null | sort -V | tail -1)
-          [ -n "$apksigner" ] || { echo "::error::apksigner not found in $ANDROID_HOME/build-tools"; ls "$ANDROID_HOME/build-tools"; exit 1; }
-          echo "apksigner: $apksigner"
+          [ -n "$apksigner" ] || { echo "::error::apksigner not found"; exit 1; }
           want=1c98acc1d156621f9a87fa1001e75b589cd719f74e276c30256272034f45ebab
           got=$("$apksigner" verify --print-certs "$apk" \
                 | sed -n 's/.*SHA-256 digest: //p' | head -1 | tr -d '\r')
@@ -80,29 +124,3 @@ jobs:
             exit 1
           fi
           echo "签名与本机 Android Studio 构建一致，可直接覆盖安装"
-
-      - name: Report the release APK
-        run: |
-          set -euo pipefail
-          apk=$(ls app/build/outputs/apk/release/*.apk | head -1)
-          echo "release APK: $apk"
-          apksigner=$(ls "$ANDROID_HOME"/build-tools/*/apksigner 2>/dev/null | sort -V | tail -1)
-          if "$apksigner" verify "$apk" >/dev/null 2>&1; then
-            echo "::warning::release APK is signed - a keystore.properties was present on the runner"
-          else
-            echo "release APK is unsigned, as expected - sign it locally with keystore/qse-release.jks"
-          fi
-
-      - name: Upload debug APK
-        uses: actions/upload-artifact@v7
-        with:
-          name: QuarkScanExtractor-debug
-          path: app/build/outputs/apk/debug/*.apk
-          if-no-files-found: error
-
-      - name: Upload release APK (unsigned)
-        uses: actions/upload-artifact@v7
-        with:
-          name: QuarkScanExtractor-release-unsigned
-          path: app/build/outputs/apk/release/*.apk
-          if-no-files-found: error
