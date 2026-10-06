@@ -49,16 +49,8 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v6
 
-      # 用仓库里这一份 debug 密钥，而不是让 AGP 在 runner 上现场随机生成一把：
-      # 随机生成的话别名密码一样，签名却不同，CI 出来的包和本地 AS 构建的无法互相覆盖安装。
-      - name: Use the repo debug keystore
-        run: |
-          set -euo pipefail
-          mkdir -p "$HOME/.android"
-          cp keystore/debug.keystore "$HOME/.android/debug.keystore"
-          keytool -list -keystore "$HOME/.android/debug.keystore" -storepass android \
-            | sed -n '1,8p'
-
+      # debug 签名由 app/build.gradle.kts 里显式指定的 keystore/debug.keystore 提供，
+      # 不依赖各机器/各平台上 AGP 默认解析出的那把密钥。
       # release 不带签名：仓库里没有 keystore.properties，hasReleaseSigning 为 false，
       # AGP 就跳过签名，产出 app-release-unsigned.apk，由本地用 keystore/qse-release.jks 签。
       - name: Build debug and release

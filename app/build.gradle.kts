@@ -33,6 +33,20 @@ android {
     }
 
     signingConfigs {
+        // debug 包固定用仓库里这一份密钥，不用 AGP 在各机器上现场解析出的那把。
+        // AGP 找默认 debug keystore 的路径是随平台变的（Linux 上从 ~/.config/.android/ 读，
+        // Windows 上从 ~/.android/ 读），找不到就随机生成一把新的 —— 那样 CI 出来的包和
+        // 本地 Android Studio 构建的签名不一致，无法互相覆盖安装。写死就没有这个变数。
+        // debug 密钥是公开约定（别名 androiddebugkey / 密码 android），不是机密。
+        val repoDebugKeystore = rootProject.file("keystore/debug.keystore")
+        if (repoDebugKeystore.exists()) {
+            getByName("debug") {
+                storeFile = repoDebugKeystore
+                storePassword = "android"
+                keyAlias = "AndroidDebugKey"
+                keyPassword = "android"
+            }
+        }
         if (hasReleaseSigning) {
             create("release") {
                 storeFile = rootProject.file(keystoreProps.getProperty("storeFile"))
