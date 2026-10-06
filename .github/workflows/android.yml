@@ -27,10 +27,26 @@ jobs:
           distribution: temurin
           java-version: '25'
 
-      # compileSdk 37 + 本地在用的 build-tools 36.0.0
-      - uses: android-actions/setup-android@v4
-        with:
-          packages: 'platforms;android-37 build-tools;36.0.0'
+      # 不用 android-actions/setup-android：它内部跑 `sdkmanager --licenses` 时会被
+      # 新版权工具的交互提示卡住（"Review licenses that have not been accepted (y/N)?"），
+      # 那一步直接失败。这里改成自己用 `yes |` 非交互接受许可，
+      # 然后让 AGP 自己下载它需要的 platform / build-tools（android.builder.sdkDownload 默认开）。
+      - name: Accept the Android SDK licenses
+        run: |
+          set -euo pipefail
+          sdk="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+          echo "SDK root: $sdk"
+          cm="$sdk/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "$cm" ]; then
+            cm=$(find "$sdk/cmdline-tools" -name sdkmanager -type f 2>/dev/null | sort | tail -1)
+          fi
+          echo "sdkmanager: ${cm:-not found}"
+          if [ -n "$cm" ]; then
+            yes | "$cm" --licenses >/dev/null 2>&1 || true
+          fi
+          echo "accepted licenses:"
+          ls "$sdk/licenses" 2>/dev/null || echo "  (licenses 目录不存在)"
+          echo "ANDROID_HOME=$sdk" >> "$GITHUB_ENV"
 
       - uses: gradle/actions/setup-gradle@v6
 
@@ -51,11 +67,14 @@ jobs:
         run: |
           set -euo pipefail
           apk=app/build/outputs/apk/debug/app-debug.apk
+          apksigner=$(ls "$ANDROID_HOME"/build-tools/*/apksigner 2>/dev/null | sort -V | tail -1)
+          [ -n "$apksigner" ] || { echo "::error::apksigner not found in $ANDROID_HOME/build-tools"; ls "$ANDROID_HOME/build-tools"; exit 1; }
+          echo "apksigner: $apksigner"
           want=1c98acc1d156621f9a87fa1001e75b589cd719f74e276c30256272034f45ebab
-          got=$("$ANDROID_HOME"/build-tools/36.0.0/apksigner verify --print-certs "$apk" \
+          got=$("$apksigner" verify --print-certs "$apk" \
                 | sed -n 's/.*SHA-256 digest: //p' | head -1 | tr -d '\r')
-          echo "debug APK   SHA-256: $got"
-          echo "repo debug  key    : $want"
+          echo "debug APK  SHA-256: $got"
+          echo "repo debug key    : $want"
           if [ "$got" != "$want" ]; then
             echo "::error::debug APK is not signed with the repo debug key"
             exit 1
@@ -67,7 +86,8 @@ jobs:
           set -euo pipefail
           apk=$(ls app/build/outputs/apk/release/*.apk | head -1)
           echo "release APK: $apk"
-          if "$ANDROID_HOME"/build-tools/36.0.0/apksigner verify "$apk" >/dev/null 2>&1; then
+          apksigner=$(ls "$ANDROID_HOME"/build-tools/*/apksigner 2>/dev/null | sort -V | tail -1)
+          if "$apksigner" verify "$apk" >/dev/null 2>&1; then
             echo "::warning::release APK is signed - a keystore.properties was present on the runner"
           else
             echo "release APK is unsigned, as expected - sign it locally with keystore/qse-release.jks"
