@@ -28,7 +28,7 @@
 
 ## 权限说明
 
-应用只声明 4 个权限：
+应用只声明 5 个权限：
 
 | 权限 | 用途 |
 |---|---|
@@ -36,6 +36,7 @@
 | `FOREGROUND_SERVICE_SPECIAL_USE` | 同上，前台服务类型声明 |
 | `POST_NOTIFICATIONS` | 扫描完成提醒 |
 | `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` | 让后台监视不被系统冻结（由系统弹窗确认）|
+| `moe.shizuku.manager.permission.API_V23` | 向 Shizuku 申请授权（仅使用 Shizuku 时生效）|
 
 **应用没有声明 `INTERNET` 权限** —— 不联网、不上传任何数据，全部操作在本机完成。读写夸克私有目录所需的高权限由 Shizuku 或 Root 在运行时提供。
 
